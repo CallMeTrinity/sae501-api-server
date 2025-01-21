@@ -28,7 +28,8 @@ export default function socketsHandler(io) {
                     sessionData.players?.push(player);
 
                     // Mettre à jour les joueurs dans la session via l'API
-                    await axios.put(`${process.env.API_URL}/session?id=${sessionId}`, {
+                    await axios.put(`${process.env.API_URL}/session`, {
+                        id: sessionId,
                         players: sessionData.players,
                     });
                 }
@@ -95,7 +96,8 @@ export default function socketsHandler(io) {
                 const currentIndex = sessionData.activePlayerIndex || 0;
                 const newIndex = (currentIndex + 1) % sessionData.players.length;
 
-                await axios.put(`${process.env.API_URL}/session?id=${sessionId}`, {
+                await axios.put(`${process.env.API_URL}/session`, {
+                    id: sessionId,
                     activePlayerIndex: newIndex,
                 });
 
