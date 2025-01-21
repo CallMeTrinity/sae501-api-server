@@ -7,7 +7,8 @@ import playerRoutes from './api/player.js';
 import sessionRoutes from './api/session.js';
 import suspectRoutes from './api/suspect.js';
 import suspect_hints from "./api/suspect_hints.js";
-// import questionRoutes from './api/question/index.js';
+import questionRoutes from './api/question/index.js';
+import answerRoutes from './api/question/answer.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -31,7 +32,8 @@ app.use('/api/player', playerRoutes);
 app.use('/api/session', sessionRoutes);
 app.use('/api/suspect', suspectRoutes);
 app.use('/api/suspect_hints', suspect_hints);
-// app.use('/api/question', questionRoutes);
+app.use('/api/question', questionRoutes);
+app.use('/api/answer', answerRoutes);
 
 // WebSocket
 initSockets(io);
