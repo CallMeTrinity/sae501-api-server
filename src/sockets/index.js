@@ -2,7 +2,6 @@ import axios from 'axios';
 
 export default function socketsHandler(io) {
     const sessions = {};
-    const sessionVote = {};
     const sessionTimerVote = {};
     const timerAlreadyEnd = {};
 
@@ -29,7 +28,7 @@ export default function socketsHandler(io) {
                     sessionData.players?.push(player);
 
                     // Mettre à jour les joueurs dans la session via l'API
-                    await axios.put(`${process.env.API_URL}/api/session?id=${sessionId}`, {
+                    await axios.put(`${process.env.API_URL}/session?id=${sessionId}`, {
                         players: sessionData.players,
                     });
                 }
@@ -50,7 +49,7 @@ export default function socketsHandler(io) {
         // Ajouter un indice
         socket.on('newHintAdded', async (sessionId) => {
             try {
-                await axios.get(`${process.env.API_URL}/api/session?id=${sessionId}`);
+                await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
                 socket.to(sessionId).emit('refreshHints');
             } catch (error) {
                 console.error("Erreur lors de l'émission de refreshHints :", error);
@@ -60,10 +59,10 @@ export default function socketsHandler(io) {
         // Lancer les questions
         socket.on('launchQuestion', async (sessionId) => {
             try {
-                const response = await axios.get(`${process.env.API_URL}/api/session?id=${sessionId}`);
+                const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
                 const sessionData = response.data;
 
-                const unansweredQuestions = await axios.get(`${process.env.API_URL}/api/question`, {
+                const unansweredQuestions = await axios.get(`${process.env.API_URL}/question`, {
                     params: { notIn: sessionData.questions },
                 });
 
@@ -90,13 +89,13 @@ export default function socketsHandler(io) {
             console.log(`Réponse reçue pour la question ${questionId}.`);
 
             try {
-                const response = await axios.get(`${process.env.API_URL}/api/session?id=${sessionId}`);
+                const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
                 const sessionData = response.data;
 
                 const currentIndex = sessionData.activePlayerIndex || 0;
                 const newIndex = (currentIndex + 1) % sessionData.players.length;
 
-                await axios.put(`${process.env.API_URL}/api/session?id=${sessionId}`, {
+                await axios.put(`${process.env.API_URL}/session?id=${sessionId}`, {
                     activePlayerIndex: newIndex,
                 });
 
@@ -112,13 +111,13 @@ export default function socketsHandler(io) {
         socket.on('voteForSuspect', async (suspectId, userId, sessionId) => {
             console.log(`Vote reçu : suspectId=${suspectId}, userId=${userId}, sessionId=${sessionId}`);
             try {
-                await axios.post(`${process.env.API_URL}/api/votes`, {
+                await axios.post(`${process.env.API_URL}/votes`, {
                     sessionId,
                     userId,
                     suspectId,
                 });
 
-                const response = await axios.get(`${process.env.API_URL}/api/votes`, {
+                const response = await axios.get(`${process.env.API_URL}/votes`, {
                     params: { sessionId },
                 });
 
