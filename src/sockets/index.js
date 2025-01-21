@@ -23,9 +23,10 @@ export default function socketsHandler(io) {
             try {
                 const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
                 const sessionData = response.data;
+                console.log("(index.js:26) sessionData", sessionData);
 
-                if (!sessionData.players.find((p) => p.id === player.id)) {
-                    sessionData.players.push(player);
+                if (!sessionData.players?.find((p) => p.id === player.id)) {
+                    sessionData.players?.push(player);
 
                     // Mettre à jour les joueurs dans la session via l'API
                     await axios.put(`${process.env.API_URL}/api/session?id=${sessionId}`, {
