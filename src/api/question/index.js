@@ -7,8 +7,17 @@ const router = express.Router();
 // Récupérer les questions
 router.get('/', async (req, res) => {
     try {
-        const { limit = 10 } = req.query;
+        const { limit = 10, id } = req.query;
 
+        if (id){
+            const question = await prisma.questions.findUnique({
+                where: {id: id},
+            })
+            if (!question){
+                return res.status(404).json({ error: 'Aucune question disponible.' });
+            }
+            return res.status(200).json(question)
+        }
         // Récupérer les questions actives depuis la base
         const questions = await prisma.questions.findMany({
             where: { active: true },
