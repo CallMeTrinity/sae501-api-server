@@ -4,7 +4,7 @@ import {Server as SocketServer} from 'socket.io';
 import prisma from 'prisma';
 import initSockets from './sockets/index.js';
 import playerRoutes from './api/player.js';
-// import sessionRoutes from './api/session.js';
+import sessionRoutes from './api/session.js';
 // import suspectRoutes from './api/suspect.js';
 // import questionRoutes from './api/question/index.js';
 
@@ -27,7 +27,7 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/player', playerRoutes);
-// app.use('/api/session', sessionRoutes);
+app.use('/api/session', sessionRoutes);
 // app.use('/api/suspect', suspectRoutes);
 // app.use('/api/question', questionRoutes);
 
