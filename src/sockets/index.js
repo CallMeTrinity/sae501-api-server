@@ -21,14 +21,14 @@ export default function socketsHandler(io) {
             console.log(`${player.name} a rejoint la session ${sessionId}`);
 
             try {
-                const response = await axios.get(`${process.env.API_URL}/api/session/${sessionId}`);
+                const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
                 const sessionData = response.data;
 
                 if (!sessionData.players.find((p) => p.id === player.id)) {
                     sessionData.players.push(player);
 
                     // Mettre à jour les joueurs dans la session via l'API
-                    await axios.put(`${process.env.API_URL}/api/session/${sessionId}`, {
+                    await axios.put(`${process.env.API_URL}/api/session?id=${sessionId}`, {
                         players: sessionData.players,
                     });
                 }
@@ -49,7 +49,7 @@ export default function socketsHandler(io) {
         // Ajouter un indice
         socket.on('newHintAdded', async (sessionId) => {
             try {
-                await axios.get(`${process.env.API_URL}/api/session/${sessionId}`);
+                await axios.get(`${process.env.API_URL}/api/session?id=${sessionId}`);
                 socket.to(sessionId).emit('refreshHints');
             } catch (error) {
                 console.error("Erreur lors de l'émission de refreshHints :", error);
@@ -59,7 +59,7 @@ export default function socketsHandler(io) {
         // Lancer les questions
         socket.on('launchQuestion', async (sessionId) => {
             try {
-                const response = await axios.get(`${process.env.API_URL}/api/session/${sessionId}`);
+                const response = await axios.get(`${process.env.API_URL}/api/session?id=${sessionId}`);
                 const sessionData = response.data;
 
                 const unansweredQuestions = await axios.get(`${process.env.API_URL}/api/question`, {
@@ -89,13 +89,13 @@ export default function socketsHandler(io) {
             console.log(`Réponse reçue pour la question ${questionId}.`);
 
             try {
-                const response = await axios.get(`${process.env.API_URL}/api/session/${sessionId}`);
+                const response = await axios.get(`${process.env.API_URL}/api/session?id=${sessionId}`);
                 const sessionData = response.data;
 
                 const currentIndex = sessionData.activePlayerIndex || 0;
                 const newIndex = (currentIndex + 1) % sessionData.players.length;
 
-                await axios.put(`${process.env.API_URL}/api/session/${sessionId}`, {
+                await axios.put(`${process.env.API_URL}/api/session?id=${sessionId}`, {
                     activePlayerIndex: newIndex,
                 });
 
