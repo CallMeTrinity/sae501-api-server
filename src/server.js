@@ -9,6 +9,7 @@ import suspectRoutes from './api/suspect.js';
 import suspect_hints from "./api/suspect_hints.js";
 import questionRoutes from './api/question/index.js';
 import answerRoutes from './api/question/answer.js';
+import dotenv from 'dotenv';
 
 const app = express();
 const server = http.createServer(app);
@@ -21,7 +22,7 @@ const io = new SocketServer(server, {
 });
 // Middleware
 app.use(express.json());
-require('dotenv').config();
+dotenv.config();
 app.use((req, res, next) => {
     req.prisma = prisma;
     next();
