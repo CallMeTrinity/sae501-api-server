@@ -5,7 +5,8 @@ import prisma from 'prisma';
 import initSockets from './sockets/index.js';
 import playerRoutes from './api/player.js';
 import sessionRoutes from './api/session.js';
-// import suspectRoutes from './api/suspect.js';
+import suspectRoutes from './api/suspect.js';
+import suspect_hints from "./api/suspect_hints.js";
 // import questionRoutes from './api/question/index.js';
 
 const app = express();
@@ -28,7 +29,8 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/player', playerRoutes);
 app.use('/api/session', sessionRoutes);
-// app.use('/api/suspect', suspectRoutes);
+app.use('/api/suspect', suspectRoutes);
+app.use('/api/suspect_hints', suspect_hints);
 // app.use('/api/question', questionRoutes);
 
 // WebSocket
