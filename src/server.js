@@ -21,6 +21,7 @@ const io = new SocketServer(server, {
 });
 // Middleware
 app.use(express.json());
+require('dotenv').config();
 app.use((req, res, next) => {
     req.prisma = prisma;
     next();
