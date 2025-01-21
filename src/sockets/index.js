@@ -24,18 +24,18 @@ export default function socketsHandler(io) {
                 const sessionData = response.data;
                 console.log("(index.js:26) sessionData", sessionData);
 
-                if (!sessionData.players?.find((p) => p.id === player.id)) {
-                    sessionData.players?.push(player);
+                if (sessionData.players && !sessionData.players.find((p) => p.id === player.id)) {
+                    sessionData.players.push(player);
 
                     // Mettre à jour les joueurs dans la session via l'API
                     await axios.put(`${process.env.API_URL}/session`, {
                         id: sessionId,
                         players: sessionData.players,
                     });
+                    io.to(sessionId).emit('updatePlayers', sessionData.players);
                 }
 
                 socket.join(sessionId);
-                io.to(sessionId).emit('updatePlayers', sessionData.players);
             } catch (error) {
                 console.error(`Erreur lors de la récupération ou mise à jour de la session ${sessionId}:`, error);
             }
