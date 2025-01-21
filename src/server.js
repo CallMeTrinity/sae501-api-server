@@ -12,14 +12,13 @@ import answerRoutes from './api/question/answer.js';
 
 const app = express();
 const server = http.createServer(app);
-const io = new SocketServer(server,
-    {
-        cors: {
-            origin: '*',
-            methods: ['GET', 'POST']
-    }
-    });
-
+const io = new SocketServer(server, {
+    path: '/api/socket',
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST'],
+    },
+});
 // Middleware
 app.use(express.json());
 app.use((req, res, next) => {
