@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Players {
+  id        Int       @id @default(autoincrement())
+  sessionId Int?
+  name      String?   @db.VarChar(50)
+  role      Int?
+  skin      Int?
+  gameData  String?   @db.Text
+  Sessions  Sessions? @relation(fields: [sessionId], references: [id], onUpdate: Restrict, map: "Players_ibfk_1")
+
+  @@index([sessionId], map: "Players_ibfk_1")
+}
+
+model Questions {
+  id         Int     @id @default(autoincrement())
+  type       String  @db.VarChar(50)
+  question   String  @db.Text
+  solution   String  @db.Text
+  hint       String? @db.Text
+  feedback   String? @db.Text
+  difficulty String? @db.VarChar(10)
+  assets     String? @db.Text
+  extraData  String? @db.Text
+  duration   Int?
+  active     Boolean @default(true)
+}
+
+model Sessions {
+  id                Int       @id @default(autoincrement())
+  code              String    @unique @db.VarChar(10)
+  playersNumber     Int?
+  createdAt         DateTime? @default(now()) @db.DateTime(0)
+  status            Int?
+  questions         String?   @default("[]") @db.LongText
+  hostId            Int?
+  hints             String?   @default("[]") @db.LongText
+  killerId          Int?
+  answeredCount     Int?
+  activePlayerIndex Int?
+  killerType        Int?
+  Players           Players[]
+  Suspects          Suspects? @relation(fields: [killerId], references: [id], onDelete: Restrict, map: "fk_killerId")
+
+  @@index([killerId], map: "idx_killerId")
+}
+
+model Suspect_hints {
+  id        Int    @id @default(autoincrement())
+  suspectId Int
+  hintText  String @db.Text
+
+  @@index([suspectId], map: "Suspect_hints_ibfk_1")
+}
+
+model Suspects {
+  id          Int        @id @default(autoincrement())
+  name        String?    @db.VarChar(25)
+  description String?    @db.Text
+  killerType  Int?
+  Sessions    Sessions[]
+}
