@@ -1,172 +1,306 @@
-import axios from 'axios';
+import {Server} from 'socket.io';
+import {encryptParam} from '../../lib/cryptoUtils';
+import {PrismaClient} from '@prisma/client';
+import {router} from "next/client";
+import {type} from "node:os";
 
-export default function socketsHandler(io) {
-    const sessions = {};
-    const sessionTimerVote = {};
-    const timerAlreadyEnd = {};
+const prisma = new PrismaClient();
+const sessions = {}; // Store en mémoire pour les sessions
+const sessionVote = {}; // Store en mémoire pour les votes par session
+const sessionTimerVote = {};
+const timerAlreadyEnd = {};
 
-    // Fonction pour mélanger un tableau
-    function shuffle(array) {
-        for (let i = array.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [array[i], array[j]] = [array[j], array[i]];
+export default function handler(req, res) {
+    if (!res.socket.server.io) {
+        console.log('Initialisation du serveur Socket.IO...');
+        const io = new Server(res.socket.server, {
+            path: '/api/socket',
+            cors: {
+                origin: '*',
+                methods: ['GET', 'POST'],
+            },
+        });
+
+        // Fonction pour mélanger les tableaux
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
         }
-        return array;
-    }
 
-    io.on('connection', (socket) => {
-        // Rejoindre une session
-        socket.on('joinSession', async (sessionId, player) => {
-            console.log(`${player.name} a rejoint la session ${sessionId}`);
+        io.on('connection', (socket) => {
+            console.log('Nouvelle connexion établie :', socket.id);
 
-            try {
-                const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
-                const sessionData = response.data;
-                console.log("(index.js:26) sessionData", sessionData);
+            // Rejoindre une session
+            socket.on('joinSession', async (sessionId, player) => {
+                console.log(`${player.name} a rejoint la session ${sessionId}`);
 
-                if (sessionData.players && !sessionData.players.find((p) => p.id === player.id)) {
-                    sessionData.players.push(player);
-
-                    // Mettre à jour les joueurs dans la session via l'API
-                    await axios.put(`${process.env.API_URL}/session`, {
-                        id: sessionId,
-                        players: sessionData.players,
-                    });
-                    io.to(sessionId).emit('updatePlayers', sessionData.players);
+                if (!sessions[sessionId]) {
+                    sessions[sessionId] = {
+                        players: [],
+                        questions: [],
+                        answered: false,
+                        activePlayerIndex: 0,
+                    };
                 }
 
+
+                const existingPlayer = sessions[sessionId].players.find((p) => p.id === player.id);
+                if (!existingPlayer) {
+                    sessions[sessionId].players.push(player);
+                }
                 socket.join(sessionId);
-            } catch (error) {
-                console.error(`Erreur lors de la récupération ou mise à jour de la session ${sessionId}:`, error);
-            }
-        });
+                io.to(sessionId).emit('updatePlayers', sessions[sessionId].players);
+            });
 
-        // Démarrer une partie
-        socket.on('startGame', (sessionId) => {
-            console.log(`La partie dans la session ${sessionId} commence.`);
-            io.to(sessionId).emit('gameStarted', '/role');
-        });
-
-        // Ajouter un indice
-        socket.on('newHintAdded', async (sessionId) => {
-            try {
-                await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
-                socket.to(sessionId).emit('refreshHints');
-            } catch (error) {
-                console.error("Erreur lors de l'émission de refreshHints :", error);
-            }
-        });
-
-        // Lancer les questions
-        socket.on('launchQuestion', async (sessionId) => {
-            try {
-                const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
-                const sessionData = response.data;
-
-                const unansweredQuestions = await axios.get(`${process.env.API_URL}/question`, {
-                    params: { notIn: sessionData.questions },
+            socket.on('answerResult', (data) => {
+                // data = { sessionId, correct, feedback }
+                // On propage cet événement à tous les clients de la session
+                io.to(data.sessionId).emit('answerResult', {
+                    correct: data.correct,
+                    feedback: data.feedback,
                 });
+            });
 
-                if (unansweredQuestions.data.length === 0) {
-                    io.to(sessionId).emit('redirectToVote', { redirectUrl: '/vote' });
+            // Démarrer une partie
+            socket.on('startGame', (sessionId) => {
+                console.log(`La partie dans la session ${sessionId} commence.`);
+                io.to(sessionId).emit('gameStarted', '/role');
+            });
+
+            socket.on('newHintAdded', async (sessionId) => {
+                try {
+                    // On peut éventuellement récupérer la session mise à jour depuis la BDD
+                    const sessionData = await prisma.sessions.findUnique({
+                        where: {id: parseInt(sessionId)},
+                    });
+                    // Diffuse l’événement aux autres clients de la session.
+                    socket.to(sessionId).emit('refreshHints');
+                }
+                catch (error) {
+                    console.error("Erreur lors de l'émission de refreshHints :", error);
+                }
+            });
+            // Lancer les questions
+            socket.on('launchQuestion', async (sessionId) => {
+                if (!sessions[sessionId]) {
+                    console.error(`Session ${sessionId} introuvable.`);
                     return;
                 }
 
-                const selectedQuestion = shuffle(unansweredQuestions.data)[0];
-                const activePlayerIndex = sessionData.activePlayerIndex || 0;
-                const activePlayer = sessionData.players[activePlayerIndex];
+                const answeredQuestions = await prisma.sessions.findUnique({
+                    where: {id: parseInt(sessionId)},
+                    select: {questions: true},
+                });
+                console.log("(socket.js:83) answeredQuestions", JSON.parse(answeredQuestions.questions)?.map(Number));
+                let selectedQuestion = null;
+                if(answeredQuestions.questions.length < 10) {
+                    const questions = await prisma.questions.findMany(
+                        {
+                            where: {
+                                id: {
+                                    notIn: JSON.parse(answeredQuestions.questions)?.map(Number),
+                                },
+                                active: true,
+                            },
+                        },
+                    )
+                    console.log("(socket.js:94) questions", questions);
+                    if (questions.length === 0) {
+                        console.error('Aucune question disponible.');
+                        io.to(sessionId).emit('redirectToVote', {redirectUrl: '/vote'});
+                        return;
+                    }
+                    selectedQuestion = shuffle(questions)[0];
+                } else {
+                    io.to(sessionId).emit('redirectToVote', {redirectUrl: '/vote'});
+                }
+
+                const activePlayerIndex = sessions[sessionId].activePlayerIndex || 0;
+                const activePlayer = sessions[sessionId].players[activePlayerIndex];
 
                 io.to(sessionId).emit('nextQuestion', {
                     question: selectedQuestion,
                     activePlayer,
                 });
-            } catch (error) {
-                console.error(`Erreur lors du lancement des questions pour la session ${sessionId}:`, error);
-            }
-        });
 
-        // Soumission de la réponse
-        socket.on('submitAnswer', async ({ sessionId, questionId, answer }) => {
-            console.log(`Réponse reçue pour la question ${questionId}.`);
+            });
 
-            try {
-                const response = await axios.get(`${process.env.API_URL}/session?id=${sessionId}`);
-                const sessionData = response.data;
+            // Soumission de la réponse
+            socket.on('submitAnswer', async ({sessionId, questionId, answer, playerId}) => {
+                console.log(`Réponse reçue pour la question ${questionId} :, answer`);
 
+                const sessionData = sessions[sessionId];
+                if (!sessionData) {
+                    console.error(`Session ${sessionId} introuvable.`);
+                    return;
+                }
+
+                // Mettre à jour l'index du joueur actif
                 const currentIndex = sessionData.activePlayerIndex || 0;
                 const newIndex = (currentIndex + 1) % sessionData.players.length;
 
-                await axios.put(`${process.env.API_URL}/session`, {
-                    id: sessionId,
-                    activePlayerIndex: newIndex,
-                });
+                try {
+                    await prisma.sessions.update({
+                        where: {id: parseInt(sessionId)},
+                        data: {activePlayerIndex: newIndex},
+                    });
+                    sessionData.activePlayerIndex = newIndex;
+                }
+                catch (error) {
+                    console.error('Erreur lors de la mise à jour de l’index du joueur actif :', error);
+                }
+
+                sessionData.answered = true;
+
+                const encryptedQuestionId = encryptParam(questionId);
+                const encryptedAnswer = encryptParam(answer);
 
                 io.to(sessionId).emit('answerSubmitted', {
-                    redirectUrl: `/result?questionId=${encodeURIComponent(questionId)}&answer=${encodeURIComponent(answer)}`,
+                    redirectUrl: `/result?questionId=${encodeURIComponent(encryptedQuestionId)}&answer=${encodeURIComponent(encryptedAnswer)}`,
                 });
-            } catch (error) {
-                console.error(`Erreur lors de la soumission de la réponse pour la session ${sessionId}:`, error);
-            }
-        });
+            });
 
-        // Gestion des votes
-        socket.on('voteForSuspect', async (suspectId, userId, sessionId) => {
-            console.log(`Vote reçu : suspectId=${suspectId}, userId=${userId}, sessionId=${sessionId}`);
-            try {
-                await axios.post(`${process.env.API_URL}/votes`, {
-                    sessionId,
-                    userId,
-                    suspectId,
-                });
+            socket.on('nextQuestion', (sessionId) => {
+                io.to(sessionId).emit('redirectToEnigma');
+            });
+            // Exemple : si tu veux passer au joueur suivant **après** la bonne réponse
+            // tu peux écouter un event du type "setNextPlayer" déclenché depuis result.jsx
+            // ou bien l'appeler directement en fin de "submitAnswer", c'est au choix.
+            socket.on('setNextPlayer', (sessionId) => {
+                const sessionData = sessions[sessionId];
+                if (!sessionData) return;
 
-                const response = await axios.get(`${process.env.API_URL}/votes`, {
-                    params: { sessionId },
-                });
+                const nbPlayers = sessionData.players.length;
+                sessionData.activePlayerIndex = (sessionData.activePlayerIndex + 1) % nbPlayers;
+                console.log(`Prochain joueur: index = ${sessionData.activePlayerIndex}`);
+            });
 
-                io.to(sessionId).emit('voteSuccess', response.data);
-            } catch (error) {
-                console.error('Erreur lors de la gestion des votes :', error);
-                io.to(socket.id).emit('voteError', 'Erreur interne lors du vote.');
-            }
-        });
 
-        // Gestion du temps de vote
-        socket.on('getVoteEndTime', (sessionId, timer) => {
-            socket.join(sessionId);
+            socket.on('voteForSuspect', (suspectId, userId, sessionId) => {
+                console.log(`suspectId ${suspectId} :`, `userId = ${userId}`, `sessionId = ${sessionId}`);
 
-            if (!sessionTimerVote[sessionId]) {
-                sessionTimerVote[sessionId] = timer;
-            }
+                if (!suspectId || !userId || !sessionId) {
+                    console.error("Données invalides reçues : suspectId, userId ou sessionId manquant.");
+                    io.to(socket.id).emit('voteError', 'Données invalides pour le vote.');
+                    return;
+                } // vérifie s'il y a les données
 
-            if (timerAlreadyEnd[sessionId]) {
-                io.to(sessionId).emit('endVote', { message: 'Vote terminé.' });
-                return;
-            }
+                if (!sessions[sessionId]) {
+                    console.error(`Session ${sessionId} introuvable.`);
+                    io.to(socket.id).emit('voteError', 'Session introuvable.');
+                    return;
+                } // vérifie sur la session existe
 
-            let returnTimer = sessionTimerVote[sessionId];
-            if (!sessions[sessionId]?.intervalId) {
-                const intervalId = setInterval(() => {
-                    if (returnTimer > 0) {
-                        returnTimer -= 1;
-                        sessionTimerVote[sessionId] = returnTimer;
-                        io.to(sessionId).emit('VoteTime', { returnTimer });
+                if (!sessionVote[sessionId]) {
+                    sessionVote[sessionId] = [];
+                } // vérifie si le vote de la session id existe, et si non initialiser a []
+
+                // vérification du tps de vote
+                const now = new Date();
+                const sessionEndTime = sessions[sessionId]?.endTime;
+                if (sessionEndTime && new Date(sessionEndTime) <= now) {
+                    io.to(socket.id).emit('voteError', 'Le temps de vote est écoulé.');
+                    return;
+                }
+
+                const voteIndex = sessionVote[sessionId].findIndex(vote => vote.userId === userId);
+
+                if (voteIndex !== -1) {
+                    if (sessionVote[sessionId][voteIndex].suspectId === suspectId) {
+                        console.log(`Le joueur ${userId} a déjà voté pour ${suspectId}`);
+                        io.to(socket.id).emit('voteError', 'Vous avez déjà voté pour ce suspect.');
                     } else {
-                        clearInterval(intervalId);
-                        timerAlreadyEnd[sessionId] = true;
-                        io.to(sessionId).emit('endVote', { returnTimer: 0 });
-                        if (sessions[sessionId]) {
-                            delete sessions[sessionId].intervalId;
-                        }
+                        sessionVote[sessionId][voteIndex].suspectId = suspectId;
+                        console.log(`Le joueur ${userId} a changé son vote pour ${suspectId}.`);
                     }
-                }, 1000);
+                } else {
+                    sessionVote[sessionId].push({userId, suspectId});
+                    console.log(`Le joueur ${userId} a voté pour le suspect ${suspectId}.`);
+                }
 
-                sessions[sessionId] = sessions[sessionId] || {};
-                sessions[sessionId].intervalId = intervalId;
-            }
+
+                console.log(`Mise à jour des votes pour la session ${sessionId} :`, sessionVote[sessionId]);
+                socket.join(sessionId);
+                io.to(sessionId).emit('voteSuccess', sessionVote[sessionId]);
+            });
+
+
+            socket.on('getSessionVote', (sessionId) => {
+                console.log(`Envoyer ${sessionVote[sessionId]} à sessionId = ${sessionId}`);
+                socket.join(sessionId);
+                io.to(sessionId).emit('allVotes', sessionVote[sessionId]);
+            });
+
+            socket.on('getVoteEndTime', (sessionId, timer ) => {
+                socket.join(sessionId);
+
+                if (!sessionTimerVote[sessionId]) {
+                    sessionTimerVote[sessionId] = timer; // Initialiser le timer pour la session
+                }
+                if (timerAlreadyEnd[sessionId] === true){
+                    const message = "vote fini"
+                    io.to(sessionId).emit('endVote', { message });
+                    return
+                }
+                let returnTimer = sessionTimerVote[sessionId];
+
+                if (!sessions[sessionId]?.intervalId) {
+                    const intervalId = setInterval(() => {
+                        if (returnTimer > 0) {
+                            returnTimer -= 1;
+                            sessionTimerVote[sessionId] = returnTimer; // Mettre à jour le timer
+                            io.to(sessionId).emit('VoteTime', { returnTimer }); // Émettre le temps restant
+                        } else {
+                            clearInterval(intervalId);
+                            timerAlreadyEnd[sessionId] = true;
+                            io.to(sessionId).emit('endVote', { returnTimer: 0 });
+                            if (sessions[sessionId]) {
+                                delete sessions[sessionId].intervalId;
+                            }
+                        }
+                    }, 1000);
+
+                    if (!sessions[sessionId]) {
+                        sessions[sessionId] = {};
+                    }
+                    sessions[sessionId].intervalId = intervalId;
+                }
+            });
+            socket.on('answerResultRightSolution', (data) => {
+                // On envoie la solution à tous les joueurs
+                io.to(data.sessionId).emit('answerResultRightSolution', {
+                    questionId: data.questionId,
+                    rightSolution: data.rightSolution
+                });
+            });
+            socket.on('startVote', (sessionId, durationInSeconds) => {
+                const now = new Date();
+                const endTime = new Date(now.getTime() + durationInSeconds * 1000);
+                if (!sessions[sessionId]) {
+                    sessions[sessionId] = {};
+                }
+                sessions[sessionId].endTime = endTime;
+                io.to(sessionId).emit('voteStart', { endTime });
+            });
+
+
+            socket.on('endGame', (sessionId, votes) => {
+                const encryptVotes = encryptParam(votes)
+                io.to(sessionId).emit('gameEnded', `/endGame?votes=${encryptVotes}`);
+            });
+
+
+            socket.on('endGameButton', (sessionId, votes) => {
+                const encryptVotes = encryptParam(votes)
+                io.to(sessionId).emit('gameEndedButton', `/endGame?votes=${encryptVotes}`);
+            });
+
         });
 
-        socket.on('endGame', (sessionId) => {
-            io.to(sessionId).emit('gameEnded', '/endGame');
-        });
-    });
+        res.socket.server.io = io;
+    }
+    res.end();
 }
