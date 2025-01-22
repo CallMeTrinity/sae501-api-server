@@ -52,6 +52,7 @@ router.post('/', async (req, res) => {
                 playersNumber,
                 status,
                 hostId,
+                activePlayerIndex : 0
             },
         });
 

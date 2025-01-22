@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors'; // Import du middleware CORS
 import { Server as SocketServer } from 'socket.io';
-import prisma from 'prisma';
+import { PrismaClient } from '@prisma/client';
 import initSockets from './sockets/index.js';
 import playerRoutes from './api/player.js';
 import sessionRoutes from './api/session.js';
@@ -13,6 +13,7 @@ import answerRoutes from './api/question/answer.js';
 import dotenv from 'dotenv';
 
 const app = express();
+const prisma = new PrismaClient();
 const server = http.createServer(app);
 const io = new SocketServer(server, {
     path: '/api/socket',

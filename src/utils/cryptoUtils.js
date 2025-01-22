@@ -3,6 +3,9 @@ import CryptoJS from "crypto-js";
 const secretKey = "JsuGsqplmeqalbdssdlga12gqo2b"; // La clé secrète utilisée pour l'encryptage
 
 export function encryptParam(param) {
+    if (!param || param === "") {
+        return null;
+    }
     const encrypted = CryptoJS.AES.encrypt(param.toString(), secretKey).toString();
     return encodeURIComponent(encrypted); // Encodez pour une utilisation sécurisée dans l'URL
 }
