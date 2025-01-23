@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
 
         if (id){
             const question = await prisma.questions.findUnique({
-                where: {id: id},
+                where: {id: parseInt(id)},
             })
             if (!question){
                 return res.status(404).json({ error: 'Aucune question disponible.' });
