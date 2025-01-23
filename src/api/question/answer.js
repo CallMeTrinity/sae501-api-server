@@ -32,7 +32,11 @@ router.post('/', async (req, res) => {
 
         // Comparer la réponse utilisateur à la solution
         const userAnswer = normalizeString(answer);
-        const correctAnswer = normalizeString(question.solution) === userAnswer;
+        const possibleAnswers = question.solution
+            .split(";")
+            .map((a) => normalizeString(a.trim()));
+
+        const correctAnswer = possibleAnswers.includes(userAnswer);
 
         if (correctAnswer) {
             return res.status(200).json({
