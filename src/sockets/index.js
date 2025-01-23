@@ -78,27 +78,80 @@ export default function initSocket(io) {
                 select: { questions: true },
             });
             const answeredList = JSON.parse(answeredQuestions.questions)?.map(Number) || [];
+            const answeredCount = answeredList.length;
 
-            let selectedQuestion = null;
-            // Adapte le 10 selon le nombre de questions max
-            if (answeredList.length < 10) {
-                const questions = await prisma.questions.findMany({
-                    where: {
-                        id: { notIn: answeredList },
-                        active: true,
-                    },
-                });
-                if (questions.length === 0) {
-                    console.error('Aucune question disponible.');
-                    io.to(sessionId).emit('redirectToVote', { redirectUrl: '/vote' });
-                    return;
-                }
-                selectedQuestion = shuffle(questions)[0];
-            } else {
+            // On veut 10 questions au total, 40% action/action_wait, 60% text
+            const totalQuestions = 10;
+            const totalAction = Math.floor(totalQuestions * 0.4); // 4 sur 10
+            const totalText = totalQuestions - totalAction;       // 6 sur 10
+
+            // Récupération des types de questions déjà posées
+            const answeredDetails = await prisma.questions.findMany({
+                where: { id: { in: answeredList } },
+                select: { id: true, type: true },
+            });
+            const answeredActionCount = answeredDetails.filter(q => q.type === 'action' || q.type === 'action_wait').length;
+            const answeredTextCount   = answeredDetails.filter(q => q.type === 'text').length;
+
+            // Combien il reste à poser pour chaque type
+            const neededAction = totalAction - answeredActionCount;
+            const neededText   = totalText - answeredTextCount;
+            const remaining    = totalQuestions - answeredCount;
+
+            // Si on a déjà tout posé, on redirige
+            if (remaining <= 0) {
                 io.to(sessionId).emit('redirectToVote', { redirectUrl: '/vote' });
                 return;
             }
 
+            // Choix du type de la prochaine question
+            let nextType = null;
+            if (neededAction <= 0) {
+                nextType = 'text';
+            } else if (neededText <= 0) {
+                nextType = 'action';
+            } else {
+                const actionRatio = neededAction / remaining;
+                const textRatio   = neededText   / remaining;
+                nextType = (actionRatio >= textRatio) ? 'action' : 'text';
+            }
+
+            // On cherche soit une question text, soit action/action_wait
+            const typesToFetch = (nextType === 'action')
+                ? ['action', 'action_wait']
+                : ['text'];
+
+            let questions = await prisma.questions.findMany({
+                where: {
+                    id: { notIn: answeredList },
+                    active: true,
+                    type: { in: typesToFetch },
+                },
+            });
+
+            // Fallback : si on n'en trouve pas, on tente l'autre type
+            if (!questions.length) {
+                const otherTypes = (nextType === 'action') ? ['text'] : ['action', 'action_wait'];
+                questions = await prisma.questions.findMany({
+                    where: {
+                        id: { notIn: answeredList },
+                        active: true,
+                        type: { in: otherTypes },
+                    },
+                });
+            }
+
+            // S'il n'y a plus aucune question, on redirige
+            if (!questions.length) {
+                console.error('Aucune question disponible.');
+                io.to(sessionId).emit('redirectToVote', { redirectUrl: '/vote' });
+                return;
+            }
+
+            // On en choisit une au hasard
+            const selectedQuestion = shuffle(questions)[0];
+
+            // Gestion du joueur actif
             const activePlayerIndex = sessions[sessionId].activePlayerIndex || 0;
             const activePlayer = sessions[sessionId].players[activePlayerIndex];
 
